@@ -1,7 +1,96 @@
-#include<stdlib.h>
-int main(){
-    while(1){
-         system("cmd");
-    }
-    return 0;
+#include "stm32f10x.h"
+
+#define uint unsigned int
+
+//计数
+uint count = 0;
+
+//引脚时钟初始化声明
+static void RCC_Configuration(void);
+
+//引脚初始化声明
+static void GPIO_Configuration(void);
+
+//中断初始化声明
+static void NVIC_Configuration(void);
+
+//定时器初始化声明
+static void TIM_Configuration(uint pre,uint pod);
+
+//服务声明
+void TIM2_IRQHandler(void);
+
+//主
+int main(void)
+{
+	RCC_Configuration();
+	GPIO_Configuration();
+	NVIC_Configuration();
+	TIM_Configuration(10000,799);
+  while (1);
 }
+
+//引脚时钟初始化
+static void RCC_Configuration(void){
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB,ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2,ENABLE);
+}
+
+//引脚初始化
+static void GPIO_Configuration(void){
+    GPIO_InitTypeDef GPIO_Initstructure;
+	GPIO_Initstructure.GPIO_Pin = GPIO_Pin_14 | GPIO_Pin_15;
+	GPIO_Initstructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_Initstructure.GPIO_Speed = GPIO_Speed_50MHz;
+	
+	GPIO_Init(GPIOB,&GPIO_Initstructure);
+	GPIO_ResetBits(GPIOB, GPIO_Pin_14 | GPIO_Pin_15);
+}
+
+//中断初始化
+static void NVIC_Configuration(void){
+    NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+//定时器初始化
+static void TIM_Configuration(uint pre,uint pod){
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+	TIM_DeInit(TIM2);
+	//72M/36000 = 2000,0.5ms,2000
+	//8M/800
+	TIM_TimeBaseStructure.TIM_Period = pod;
+	TIM_TimeBaseStructure.TIM_Prescaler = pre;
+	TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(TIM2,&TIM_TimeBaseStructure);
+	
+	TIM_ClearFlag(TIM2, TIM_FLAG_Update);
+	TIM_ITConfig(TIM2, TIM_FLAG_Update, ENABLE );
+	TIM_Cmd(TIM2, ENABLE);
+}
+
+//服务声明
+void TIM2_IRQHandler(void){
+    if(TIM_GetITStatus(TIM2, TIM_FLAG_Update) == SET){
+		GPIO_WriteBit(GPIOB,GPIO_Pin_14,(BitAction)(1-GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_14)));
+	}
+	if(GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_15) == 0){
+		if(count < 1){
+			count++;
+		}else{
+			GPIO_WriteBit(GPIOB,GPIO_Pin_15,(BitAction)(1-GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_15)));
+			count = 0;
+		}
+	}else{
+		GPIO_WriteBit(GPIOB,GPIO_Pin_15,(BitAction)(1-GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_15)));
+	}
+	TIM_ClearITPendingBit(TIM2, TIM_FLAG_Update);
+}
+
+
